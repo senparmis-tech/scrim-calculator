@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0d0620">
+<title>Scrim Admin</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+.slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-top:10px}
+.slotcard{border:1px solid #444;border-radius:10px;padding:10px}
+.slotcard.ns{opacity:.5}
+.slotcard .hd{display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid #555;padding-bottom:6px;margin-bottom:8px;font-weight:bold}
+.slotcard .hd label{font-weight:normal;font-size:12px;display:flex;align-items:center;gap:4px}
+.slotcard .pr{display:flex;gap:6px;margin:5px 0}
+.slotcard .pr input[type=text]{flex:1;min-width:0}
+.slotcard .pr input[type=number]{width:56px}
+.slotcard .ft{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:13px}
+.slotcard .ft input{width:64px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Scrim Admin</h1>
+    <div class="row">
+      <span class="muted" id="status"></span>
+      <a href="/" target="_blank">Public page</a>
+      <a href="/logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Saved scrims</h2>
+    <div class="row">
+      <select id="scrimSel" style="flex:1 1 220px"></select>
+      <button class="sec" id="scrimNew">New scrim</button>
+      <button class="danger" id="scrimDel">Delete</button>
+    </div>
+    <div id="scrimNewPanel" style="display:none">
+      <div class="settings">
+        <label>Name<input type="text" id="nsTitle" placeholder="e.g. SATURDAY SCRIM"></label>
+        <label>Date<input type="text" id="nsDate" placeholder="10/31/2026"></label>
+        <label>Start from
+          <select id="nsMode">
+            <option value="teams">Same teams, no results</option>
+            <option value="empty">Empty (no teams)</option>
+            <option value="all">Full copy of this scrim</option>
+          </select>
+        </label>
+      </div>
+      <div class="row"><button id="nsCreate">Create and open</button><button class="sec" id="nsCancel">Cancel</button></div>
+    </div>
+    <p class="muted" id="scrimMsg">Everything you enter saves automatically into the scrim selected here. The public page shows this scrim first.</p>
+  </div>
+
+  <div class="card">
+    <h2>Settings</h2>
+    <div class="settings">
+      <label>Title<input type="text" id="title"></label>
+      <label>Date<input type="text" id="date" placeholder="10/27/2026"></label>
+      <label>Number of games<input type="number" id="games" min="1" max="12"></label>
+      <label>Team slots<input type="number" id="slots" min="1" max="50"></label>
+      <label>Points per kill<input type="number" id="kp" step="any"></label>
+      <label>Placement points (1st, 2nd, ...)<input type="text" id="pp"></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Teams</h2>
+    <div class="row">
+      <button class="sec" id="togglePasteTeams">Paste team names</button>
+      <button class="danger" id="clearTeams">Clear all teams</button>
+    </div>
+    <div id="pasteTeamsPanel" style="display:none">
+      <p class="muted">One team name per line. They fill Slot 1, 2, 3... in order and replace the current names.</p>
+      <textarea id="teamsText" rows="8" style="width:100%" placeholder="TEAM ONE&#10;TEAM TWO&#10;TEAM THREE"></textarea>
+      <div class="row"><button id="applyTeams">Fill slots</button></div>
+    </div>
+    <div class="grid" id="teams"></div>
+  </div>
+
+  <div class="card">
+    <h2>Game results</h2>
+    <div class="tabs" id="tabs"></div>
+    <div class="row" id="quick">
+      <b>Quick add:</b>
+      <input type="number" id="qSlot" enterkeyhint="next" min="1" placeholder="Slot">
+      <input type="number" id="qRank" enterkeyhint="next" min="1" placeholder="Placement">
+      <input type="number" id="qKills" enterkeyhint="done" min="0" placeholder="Kills">
+      <button id="quickAdd">Add</button>
+      <span class="muted" id="qMsg">Slot, placement, kills, then Enter</span>
+    </div>
+    <div class="row">
+      <label class="muted">Scan screenshots (AI):
+        <input type="file" id="scanFiles" accept="image/*" multiple>
+      </label>
+      <button class="danger" id="stopScan" style="display:none">Stop</button>
+      <button class="sec" id="clearGame">Clear this game</button>
+      <button class="sec" id="togglePaste">Paste from Gemini app</button>
+      <span class="muted" id="scanMsg"></span>
+    </div>
+    <div id="pastePanel" class="card" style="display:none">
+      <h2>Paste Gemini result</h2>
+      <p class="muted">1) Copy the prompt, 2) open the Gemini app, attach your screenshots and paste the prompt, 3) copy Gemini's whole reply and paste it below.</p>
+      <div class="row"><button class="sec" id="copyPrompt">Copy prompt for Gemini</button></div>
+      <textarea id="promptText" style="display:none">{{ scan_prompt }}</textarea>
+      <textarea id="pasteText" rows="8" style="width:100%" placeholder="Paste Gemini's reply here"></textarea>
+      <div class="row"><button id="loadPaste">Load into review</button></div>
+    </div>
+    <div id="scanPanel" class="card" style="display:none">
+      <h2>Review scan</h2>
+      <p class="muted">Check the rank, kills and team for each row. Choose "ignore" to skip a row. The players you assign are remembered so the next games match automatically.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>Rank</th><th>Kills</th><th class="l">Players seen</th><th class="l">Assign to team</th></tr></thead>
+        <tbody id="scanBody"></tbody>
+      </table></div>
+      <div class="row"><button id="applyScan">Apply to this game</button><button class="sec" id="cancelScan">Cancel</button></div>
+    </div>
+    <div class="row"><button class="sec" id="toggleManual">Manual entry by slot</button></div>
+    <div id="manualPanel" style="display:none">
+      <p class="muted">Pick the game tab above. Enter the rank and each player's kills; the team's kills are added up for you. Player names are saved per team.</p>
+      <div class="slots" id="slotCards"></div>
+    </div>
+    <div class="scroll" id="gameTable"></div>
+  </div>
+
+  <div class="card">
+    <div class="top">
+      <h2>Standings</h2>
+      <div class="row">
+        <button id="dl">Download image</button>
+        <button class="danger" id="reset">Reset all results</button>
+      </div>
+    </div>
+    <div class="scroll" id="board"></div>
+  </div>
+</div>
+
+<script src="/static/board.js"></script>
+<script>
+var S = null, ST = [], cur = 0, saveTimer = null, scanRows = [];
+function $(id) { return document.getElementById(id); }
+function toInt(v) { var n = parseInt(v, 10); return isNaN(n) ? null : n; }
+
+function api(url, opts) {
+  return fetch(url, opts).then(function (r) {
+    if (r.status === 401) { location.href = "/login"; throw new Error("Not logged in"); }
+    return r;
+  });
+}
+
+function setStatus(t) { $("status").textContent = t; }
+
+function scheduleSave(structural) {
+  setStatus("Saving...");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(function () { saveTimer = null; save(structural); }, 400);
+}
+
+function save(structural) {
+  return api("/api/admin/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(S)
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    ST = d.standings;
+    if (structural) {
+      S = d.state;
+      if (cur >= S.games) cur = S.games - 1;
+      renderAll();
+    } else {
+      updatePoints();
+      renderStandings();
+    }
+    setStatus("Saved ✓");
+    loadScrims();
+  }).catch(function () { setStatus("Save failed"); });
+}
+
+/* ---------- saved scrims ---------- */
+var scrimList = [], scrimCur = "";
+
+function scrimLabel(x) { return (x.title.trim() || "Untitled") + (x.date ? " — " + x.date : ""); }
+
+function renderScrims() {
+  var h = "";
+  scrimList.forEach(function (x) {
+    h += '<option value="' + esc(x.id) + '"' + (x.id === scrimCur ? " selected" : "") + ">" + esc(scrimLabel(x)) + "</option>";
+  });
+  $("scrimSel").innerHTML = h;
+}
+
+function loadScrims() {
+  return api("/api/admin/scrims").then(function (r) { return r.json(); }).then(function (d) {
+    scrimList = d.scrims;
+    scrimCur = d.current;
+    renderScrims();
+  });
+}
+
+function flushSave() {
+  if (!saveTimer) return Promise.resolve();
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  return save(false);
+}
+
+function openScrim(d) {
+  S = d.state;
+  ST = d.standings;
+  cur = 0;
+  scrimCur = d.id;
+  $("scanPanel").style.display = "none";
+  $("scanMsg").textContent = "";
+  renderAll();
+  return loadScrims();
+}
+
+$("scrimSel").onchange = function (e) {
+  var id = e.target.value;
+  flushSave().then(function () {
+    return api("/api/admin/scrims/switch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id }) });
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (d.error) { $("scrimMsg").textContent = d.error; return loadScrims(); }
+    $("scrimMsg").textContent = "Opened. The public page now shows this scrim first.";
+    return openScrim(d);
+  });
+};
+
+$("scrimNew").onclick = function () {
+  var p = $("scrimNewPanel");
+  p.style.display = p.style.display === "none" ? "block" : "none";
+  var n = new Date();
+  $("nsDate").value = (n.getMonth() + 1) + "/" + n.getDate() + "/" + n.getFullYear();
+  $("nsTitle").value = "";
+};
+$("nsCancel").onclick = function () { $("scrimNewPanel").style.display = "none"; };
+
+$("nsCreate").onclick = function () {
+  var body = { title: $("nsTitle").value, date: $("nsDate").value, mode: $("nsMode").value };
+  flushSave().then(function () {
+    return api("/api/admin/scrims/new", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    $("scrimNewPanel").style.display = "none";
+    $("scrimMsg").textContent = "New scrim created and opened.";
+    return openScrim(d);
+  });
+};
+
+$("scrimDel").onclick = function () {
+  var x = scrimList.filter(function (s) { return s.id === scrimCur; })[0];
+  if (!x) return;
+  if (!confirm("Delete the scrim \"" + scrimLabel(x) + "\" and all of its results? This cannot be undone.")) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  api("/api/admin/scrims/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: scrimCur }) })
+    .then(function (r) { return r.json(); }).then(function (d) {
+      if (d.error) { $("scrimMsg").textContent = d.error; return; }
+      $("scrimMsg").textContent = "Deleted. Opened another scrim.";
+      return openScrim(d);
+    });
+};
+
+function load() {
+  api("/api/admin/state").then(function (r) { return r.json(); }).then(function (d) {
+    S = d.state;
+    ST = d.standings;
+    renderAll();
+    loadScrims();
+  });
+}
+
+function renderAll() {
+  $("title").value = S.title;
+  $("date").value = S.date;
+  $("games").value = S.games;
+  $("slots").value = S.slots;
+  $("kp").value = S.kill_points;
+  $("pp").value = S.placement_points.join(", ");
+  renderTeams();
+  renderTabs();
+  renderGame();
+  renderSlotCards();
+  renderStandings();
+}
+
+function fixShape() {
+  S.teams.forEach(function (t) {
+    if (!t.players) t.players = ["", "", "", ""];
+  });
+  S.results.forEach(function (g) {
+    g.forEach(function (r) { if (!r.pk) r.pk = [null, null, null, null]; });
+  });
+}
+
+function renderSlotCards() {
+  if ($("manualPanel").style.display === "none") return;
+  fixShape();
+  var h = "";
+  S.teams.forEach(function (t, i) {
+    if (!t.name.trim()) return;
+    var r = S.results[cur][i];
+    var dis = r.noshow ? "disabled" : "";
+    h += '<div class="slotcard' + (r.noshow ? " ns" : "") + '" data-i="' + i + '"><div class="hd"><span>Slot ' + (i + 1) + " · " + esc(t.name) + "</span>" +
+      '<label><input type="checkbox" data-f="noshow" ' + (r.noshow ? "checked" : "") + "> No show</label></div>";
+    for (var p = 0; p < 4; p++) {
+      h += '<div class="pr"><input type="text" data-f="pname" data-p="' + p + '" placeholder="player ' + (p + 1) + '" value="' + esc(t.players[p] || "") + '">' +
+        '<input type="number" min="0" data-f="pk" data-p="' + p + '" placeholder="kills" value="' + (r.pk[p] == null ? "" : r.pk[p]) + '" ' + dis + "></div>";
+    }
+    h += '<div class="ft"><span>Rank <input type="number" min="1" data-f="rank" value="' + (r.rank == null ? "" : r.rank) + '" ' + dis + '></span>' +
+      '<span>Kills: <b class="tk">' + (r.kills == null ? 0 : r.kills) + "</b></span></div></div>";
+  });
+  $("slotCards").innerHTML = h || '<p class="muted">Type team names above first</p>';
+}
+
+function renderTeams() {
+  var h = "";
+  S.teams.forEach(function (t, i) {
+    h += '<label><span>' + (i + 1) + '</span><input type="text" data-i="' + i + '" value="' + esc(t.name) + '" placeholder="Team name"></label>';
+  });
+  $("teams").innerHTML = h;
+}
+
+function renderTabs() {
+  var h = "";
+  for (var g = 0; g < S.games; g++) h += '<button data-g="' + g + '" class="' + (g === cur ? "on" : "") + '">Game ' + (g + 1) + "</button>";
+  $("tabs").innerHTML = h;
+}
+
+function renderGame() {
+  var h = '<table><tr><th>Slot</th><th class="l">Team</th><th>No show</th><th>Placement (rank)</th><th>Kills</th><th>Points</th></tr>';
+  var any = false;
+  S.teams.forEach(function (t, i) {
+    if (!t.name.trim()) return;
+    any = true;
+    var r = S.results[cur][i];
+    var dis = r.noshow ? "disabled" : "";
+    h += "<tr><td>" + (i + 1) + '</td><td class="l">' + esc(t.name) + "</td>" +
+      '<td><input type="checkbox" data-i="' + i + '" data-f="noshow" ' + (r.noshow ? "checked" : "") + "></td>" +
+      '<td><input type="number" min="1" data-i="' + i + '" data-f="rank" value="' + (r.rank == null ? "" : r.rank) + '" ' + dis + "></td>" +
+      '<td><input type="number" min="0" data-i="' + i + '" data-f="kills" value="' + (r.kills == null ? "" : r.kills) + '" ' + dis + "></td>" +
+      '<td id="pts-' + i + '">0</td></tr>';
+  });
+  if (!any) h += '<tr><td colspan="6">Type team names above first</td></tr>';
+  $("gameTable").innerHTML = h + "</table>";
+  updatePoints();
+}
+
+function updatePoints() {
+  ST.forEach(function (row) {
+    var el = $("pts-" + (row.slot - 1));
+    if (el) el.textContent = row.games[cur] ? row.games[cur].points : 0;
+  });
+}
+
+function renderStandings() {
+  $("board").innerHTML = boardHTML(ST, S);
+}
+
+/* ---------- settings ---------- */
+$("title").oninput = function (e) { S.title = e.target.value; scheduleSave(false); };
+$("date").oninput = function (e) { S.date = e.target.value; scheduleSave(false); };
+$("kp").oninput = function (e) { S.kill_points = Number(e.target.value) || 0; scheduleSave(false); };
+$("pp").oninput = function (e) {
+  S.placement_points = e.target.value.split(",").map(function (x) { return x.trim(); })
+    .filter(function (x) { return x !== ""; }).map(Number).filter(function (n) { return !isNaN(n); });
+  scheduleSave(false);
+};
+$("games").onchange = function (e) { S.games = Math.min(12, Math.max(1, toInt(e.target.value) || 1)); scheduleSave(true); };
+$("slots").onchange = function (e) { S.slots = Math.min(50, Math.max(1, toInt(e.target.value) || 1)); scheduleSave(true); };
+
+/* ---------- teams ---------- */
+$("teams").addEventListener("input", function (e) {
+  var i = e.target.getAttribute("data-i");
+  if (i === null) return;
+  S.teams[i].name = e.target.value;
+  scheduleSave(false);
+});
+$("togglePasteTeams").onclick = function () {
+  var p = $("pasteTeamsPanel");
+  p.style.display = p.style.display === "none" ? "block" : "none";
+};
+
+$("applyTeams").onclick = function () {
+  var names = $("teamsText").value.split(/\r?\n/).map(function (x) { return x.replace(/^\s*\d+\s*[.)\-:]\s*/, "").trim(); }).filter(function (x) { return x; });
+  if (!names.length) return;
+  if (names.length > 50) names = names.slice(0, 50);
+  if (names.length > S.slots) {
+    S.slots = names.length;
+    while (S.teams.length < S.slots) S.teams.push({ name: "", aliases: [], players: ["", "", "", ""] });
+    S.results.forEach(function (g) {
+      while (g.length < S.slots) g.push({ rank: null, kills: null, noshow: false, pk: [null, null, null, null] });
+    });
+  }
+  names.forEach(function (n, i) {
+    if (S.teams[i].name.trim().toLowerCase() !== n.toLowerCase()) S.teams[i].aliases = [];
+    S.teams[i].name = n.slice(0, 40);
+  });
+  $("teamsText").value = "";
+  $("pasteTeamsPanel").style.display = "none";
+  scheduleSave(true);
+};
+
+$("clearTeams").onclick = function () {
+  if (!confirm("Clear ALL team names, remembered players and aliases? Game results are kept but hidden until teams are named again.")) return;
+  S.teams.forEach(function (t) { t.name = ""; t.aliases = []; t.players = ["", "", "", ""]; });
+  scheduleSave(true);
+};
+
+$("teams").addEventListener("change", function () { renderGame(); renderSlotCards(); });
+
+/* ---------- tabs / game table ---------- */
+$("tabs").addEventListener("click", function (e) {
+  var g = e.target.getAttribute("data-g");
+  if (g === null) return;
+  cur = Number(g);
+  renderTabs();
+  renderGame();
+  renderSlotCards();
+  $("scanPanel").style.display = "none";
+});
+
+$("gameTable").addEventListener("input", function (e) {
+  var i = e.target.getAttribute("data-i"), f = e.target.getAttribute("data-f");
+  if (i === null || f === "noshow") return;
+  S.results[cur][i][f] = toInt(e.target.value);
+  if (f === "kills" && S.results[cur][i].pk) S.results[cur][i].pk = [null, null, null, null];
+  scheduleSave(false);
+});
+$("gameTable").addEventListener("change", function (e) {
+  var i = e.target.getAttribute("data-i"), f = e.target.getAttribute("data-f");
+  if (i !== null && f === "noshow") {
+    S.results[cur][i].noshow = e.target.checked;
+    renderGame();
+    scheduleSave(false);
+  }
+});
+
+/* ---------- quick add: slot + placement + kills ---------- */
+function quickAdd() {
+  var slot = toInt($("qSlot").value), rank = toInt($("qRank").value), kills = toInt($("qKills").value);
+  var msg = $("qMsg");
+  if (!slot || slot < 1 || slot > S.slots) { msg.textContent = "Slot must be a number from 1 to " + S.slots; $("qSlot").focus(); return; }
+  var t = S.teams[slot - 1];
+  if (!t.name.trim()) { msg.textContent = "Slot " + slot + " has no team name yet"; $("qSlot").focus(); return; }
+  if (!rank || rank < 1) { msg.textContent = "Enter the placement (1 or higher)"; $("qRank").focus(); return; }
+  if (kills === null || kills < 0) kills = 0;
+  fixShape();
+  var r = S.results[cur][slot - 1], dup = 0;
+  S.results[cur].forEach(function (x, i) {
+    if (i !== slot - 1 && x.rank === rank && !x.noshow && S.teams[i].name.trim()) dup = i + 1;
+  });
+  var replaced = r.rank != null || r.kills != null || r.noshow;
+  r.rank = rank;
+  r.kills = kills;
+  r.noshow = false;
+  r.pk = [null, null, null, null];
+  msg.textContent = "✓ Game " + (cur + 1) + ": Slot " + slot + " " + t.name.trim() + " → placement " + rank + ", " + kills + " kill" + (kills === 1 ? "" : "s") +
+    (replaced ? " (replaced the earlier entry)" : "") + (dup ? "  ⚠ Slot " + dup + " also has placement " + rank : "");
+  $("qSlot").value = "";
+  $("qRank").value = "";
+  $("qKills").value = "";
+  $("qSlot").focus();
+  renderGame();
+  renderSlotCards();
+  scheduleSave(false);
+}
+
+$("quickAdd").onclick = quickAdd;
+$("qSlot").oninput = function () {
+  var s = toInt($("qSlot").value);
+  $("qMsg").textContent = s && S.teams[s - 1] ? (S.teams[s - 1].name.trim() || "(no team name)") : "";
+};
+["qSlot", "qRank", "qKills"].forEach(function (id, k, arr) {
+  $(id).addEventListener("keydown", function (e) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    if (k < arr.length - 1 && !$(arr[k + 1]).value) $(arr[k + 1]).focus();
+    else quickAdd();
+  });
+});
+
+$("toggleManual").onclick = function () {
+  var p = $("manualPanel");
+  p.style.display = p.style.display === "none" ? "block" : "none";
+  renderSlotCards();
+};
+
+$("slotCards").addEventListener("input", function (e) {
+  var card = e.target.closest(".slotcard");
+  if (!card) return;
+  var i = Number(card.getAttribute("data-i")), f = e.target.getAttribute("data-f"), p = Number(e.target.getAttribute("data-p"));
+  var r = S.results[cur][i];
+  if (f === "pname") S.teams[i].players[p] = e.target.value;
+  else if (f === "rank") r.rank = toInt(e.target.value);
+  else if (f === "pk") {
+    r.pk[p] = toInt(e.target.value);
+    r.kills = r.pk.reduce(function (a, b) { return a + (b || 0); }, 0);
+    card.querySelector(".tk").textContent = r.kills;
+  } else return;
+  scheduleSave(false);
+});
+
+$("slotCards").addEventListener("change", function (e) {
+  if (e.target.getAttribute("data-f") !== "noshow") return;
+  var i = Number(e.target.closest(".slotcard").getAttribute("data-i"));
+  S.results[cur][i].noshow = e.target.checked;
+  renderSlotCards();
+  renderGame();
+  scheduleSave(false);
+});
+
+$("clearGame").onclick = function () {
+  if (!confirm("Clear all results of Game " + (cur + 1) + "?")) return;
+  S.results[cur] = S.results[cur].map(function () { return { rank: null, kills: null, noshow: false, pk: [null, null, null, null] }; });
+  renderGame();
+  renderSlotCards();
+  scheduleSave(false);
+};
+
+/* ---------- AI scan ---------- */
+function resizeImage(file) {
+  return createImageBitmap(file).then(function (bmp) {
+    var k = Math.min(1, 1400 / Math.max(bmp.width, bmp.height));
+    var c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k);
+    c.height = Math.round(bmp.height * k);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return new Promise(function (res) { c.toBlob(res, "image/jpeg", 0.85); });
+  });
+}
+
+var scanAbort = null, scanStopped = false, STOP = {};
+
+function sleep(ms) {
+  return new Promise(function (res) {
+    var t = setTimeout(res, ms);
+    scanAbort.signal.addEventListener("abort", function () { clearTimeout(t); res(); });
+  });
+}
+
+function runScan(blobs) {
+  scanStopped = false;
+  scanAbort = new AbortController();
+  var attempt = 0;
+  $("stopScan").style.display = "";
+
+  function once() {
+    attempt++;
+    $("scanMsg").textContent = "Reading screenshots with AI... attempt " + attempt;
+    var fd = new FormData();
+    blobs.forEach(function (b, k) { fd.append("images", b, "shot" + k + ".jpg"); });
+    return fetch("/api/admin/scan", { method: "POST", body: fd, signal: scanAbort.signal }).then(function (r) {
+      if (r.status === 401) { location.href = "/login"; throw new Error("Not logged in"); }
+      return r.json().catch(function () { return { error: "Server did not answer properly", retry: true }; })
+        .then(function (d) { return { ok: r.ok, d: d }; });
+    });
+  }
+
+  function retryLater(msg) {
+    var secs = Math.min(2 * attempt, 15);
+    $("scanMsg").textContent = "Attempt " + attempt + " failed (" + msg + "). Retrying in " + secs + "s... press Stop to cancel";
+    return sleep(secs * 1000).then(function () {
+      if (scanStopped) throw STOP;
+      return loop();
+    });
+  }
+
+  function loop() {
+    return once().then(function (res) {
+      if (res.ok) return res.d;
+      if (res.d.retry === false) throw new Error(res.d.error || "Scan failed");
+      return retryLater(res.d.error || "error");
+    }, function (err) {
+      if (scanStopped) throw STOP;
+      if (err && err.message === "Not logged in") throw err;
+      return retryLater(err && err.message ? err.message : "network error");
+    });
+  }
+
+  return loop().then(function (d) {
+    scanRows = d.rows;
+    showScan();
+    $("scanMsg").textContent = "Scan done after " + attempt + " attempt" + (attempt > 1 ? "s" : "") + ". Check the rows below.";
+  }).catch(function (err) {
+    $("scanMsg").textContent = err === STOP ? "Scan stopped." : "Error: " + err.message;
+  }).then(function () {
+    $("stopScan").style.display = "none";
+    scanAbort = null;
+  });
+}
+
+$("stopScan").onclick = function () {
+  scanStopped = true;
+  if (scanAbort) scanAbort.abort();
+};
+
+$("scanFiles").onchange = function (e) {
+  var files = Array.prototype.slice.call(e.target.files);
+  var input = e.target;
+  if (!files.length) return;
+  if (scanAbort) { alert("A scan is already running. Press Stop first."); input.value = ""; return; }
+  if (!S.teams.some(function (t) { return t.name.trim(); })) {
+    alert("Type the team names first so the scan can match them.");
+    input.value = "";
+    return;
+  }
+  $("scanMsg").textContent = "Preparing screenshots...";
+  Promise.all(files.map(resizeImage)).then(runScan).catch(function (err) {
+    $("scanMsg").textContent = "Error: " + err.message;
+  }).then(function () { input.value = ""; });
+};
+
+$("togglePaste").onclick = function () {
+  var p = $("pastePanel");
+  p.style.display = p.style.display === "none" ? "block" : "none";
+};
+
+$("copyPrompt").onclick = function () {
+  var t = $("promptText");
+  var text = t.value;
+  function done() { $("scanMsg").textContent = "Prompt copied. Paste it into the Gemini app with your screenshots."; }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(t); done(); });
+  } else { fallbackCopy(t); done(); }
+};
+
+function fallbackCopy(t) {
+  t.style.display = "block";
+  t.select();
+  try { document.execCommand("copy"); } catch (e) {}
+  t.style.display = "none";
+}
+
+$("loadPaste").onclick = function () {
+  var text = $("pasteText").value;
+  if (!text.trim()) { $("scanMsg").textContent = "Paste Gemini's reply first."; return; }
+  api("/api/admin/paste", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text })
+  }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+    .then(function (res) {
+      if (!res.ok) { $("scanMsg").textContent = "Error: " + (res.d.error || "could not read it"); return; }
+      scanRows = res.d.rows;
+      showScan();
+      $("scanMsg").textContent = "Loaded " + scanRows.length + " teams. Check the rows below.";
+    }).catch(function (err) { $("scanMsg").textContent = "Error: " + err.message; });
+};
+
+function showScan() {
+  var opts = '<option value="0">— ignore —</option>';
+  S.teams.forEach(function (t, i) {
+    if (t.name.trim()) opts += '<option value="' + (i + 1) + '">Slot ' + (i + 1) + " – " + esc(t.name) + "</option>";
+  });
+  var h = "";
+  scanRows.forEach(function (r, k) {
+    var players = (r.lobby_no ? "#" + r.lobby_no + " · " : "") + r.players.concat(r.team_tag ? ["[" + r.team_tag + "]"] : []).join(", ");
+    h += "<tr><td><input type=\"number\" min=\"1\" class=\"s-rank\" value=\"" + (r.rank == null ? "" : r.rank) + "\"></td>" +
+      "<td><input type=\"number\" min=\"0\" class=\"s-kills\" value=\"" + r.kills + "\"></td>" +
+      '<td class="l">' + esc(players) + "</td>" +
+      '<td class="l"><select class="s-slot" data-k="' + k + '">' + opts + "</select></td></tr>";
+  });
+  $("scanBody").innerHTML = h;
+  document.querySelectorAll(".s-slot").forEach(function (sel) {
+    sel.value = String(scanRows[Number(sel.getAttribute("data-k"))].suggested_slot || 0);
+  });
+  $("scanPanel").style.display = "block";
+}
+
+$("cancelScan").onclick = function () { $("scanPanel").style.display = "none"; };
+
+$("applyScan").onclick = function () {
+  var trs = document.querySelectorAll("#scanBody tr");
+  var used = {};
+  for (var k = 0; k < trs.length; k++) {
+    var slot = Number(trs[k].querySelector(".s-slot").value);
+    if (!slot) continue;
+    if (used[slot]) { alert("Two rows are assigned to Slot " + slot + ". Fix that first."); return; }
+    used[slot] = true;
+  }
+  for (var j = 0; j < trs.length; j++) {
+    var s = Number(trs[j].querySelector(".s-slot").value);
+    if (!s) continue;
+    var r = S.results[cur][s - 1];
+    r.rank = toInt(trs[j].querySelector(".s-rank").value);
+    r.kills = toInt(trs[j].querySelector(".s-kills").value);
+    r.noshow = false;
+    r.pk = [null, null, null, null];
+    var t = S.teams[s - 1];
+    var names = scanRows[j].players.concat(scanRows[j].team_tag ? [scanRows[j].team_tag] : []);
+    names.forEach(function (p) {
+      p = String(p).trim();
+      if (p && t.aliases.indexOf(p) === -1 && t.aliases.length < 60) t.aliases.push(p);
+    });
+  }
+  $("scanPanel").style.display = "none";
+  renderGame();
+  renderSlotCards();
+  scheduleSave(false);
+};
+
+/* ---------- other buttons ---------- */
+$("dl").onclick = function () { downloadBoard(ST, S); };
+$("reset").onclick = function () {
+  if (!confirm("Delete ALL results of ALL games? Team names stay.")) return;
+  api("/api/admin/reset", { method: "POST" }).then(function (r) { return r.json(); }).then(function (d) {
+    S = d.state;
+    ST = d.standings;
+    renderAll();
+    setStatus("Reset ✓");
+  });
+};
+
+load();
+</script>
+</body>
+</html>

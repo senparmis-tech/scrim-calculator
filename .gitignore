@@ -1,0 +1,19 @@
+# secrets: never commit these
+config.py
+
+# your scrim data (results, team names)
+scrims/
+data.json
+*.tmp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

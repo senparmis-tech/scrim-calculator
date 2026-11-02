@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0d0620">
+<title>Scrim Results</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1 id="title">Scrim Results</h1>
+      <div class="muted" id="sub"></div>
+    </div>
+    <div class="row">
+      <select id="scrimSel" title="Choose a saved scrim"></select>
+      <button id="dl">Download image</button>
+      <a href="/admin">Admin</a>
+    </div>
+  </div>
+  <div class="card scroll" id="board"></div>
+  <div class="card preview"><h2>Image preview</h2><div id="preview"></div></div>
+</div>
+<script src="/static/board.js"></script>
+<script>
+var D = null;
+function render() {
+  document.getElementById("title").textContent = D.title;
+  var pp = D.placement_points.map(function (p, i) { return ordinal(i + 1) + " " + p; }).join(" • ");
+  document.getElementById("sub").textContent = (D.date ? D.date + " — " : "") + "Placement: " + pp + " • 1 kill = " + D.kill_points;
+  document.getElementById("board").innerHTML = D.standings.length ? boardHTML(D.standings, D) : "No teams yet";
+  showPreview(D.standings, D, document.getElementById("preview"));
+}
+var SEL = new URLSearchParams(location.search).get("s") || "";
+var LIST = { current: "", scrims: [] };
+
+function fillScrims() {
+  var sel = document.getElementById("scrimSel"), o = "";
+  LIST.scrims.forEach(function (x) {
+    var name = (x.title.trim() || "Untitled") + (x.date ? " — " + x.date : "") + (x.id === LIST.current ? " (latest)" : "");
+    o += '<option value="' + esc(x.id) + '">' + esc(name) + "</option>";
+  });
+  sel.innerHTML = o;
+  var want = SEL || LIST.current;
+  if (!LIST.scrims.some(function (x) { return x.id === want; })) want = LIST.current;
+  sel.value = want;
+  sel.style.display = LIST.scrims.length > 1 ? "" : "none";
+}
+
+function load() {
+  fetch("/api/scrims").then(function (r) { return r.json(); }).then(function (l) {
+    LIST = l;
+    fillScrims();
+    return fetch("/api/state" + (SEL ? "?s=" + encodeURIComponent(SEL) : ""));
+  }).then(function (r) { return r.json(); }).then(function (d) { D = d; render(); });
+}
+
+document.getElementById("scrimSel").onchange = function (e) {
+  SEL = e.target.value === LIST.current ? "" : e.target.value;
+  history.replaceState(null, "", SEL ? "?s=" + encodeURIComponent(SEL) : location.pathname);
+  load();
+};
+document.getElementById("dl").onclick = function () { if (D) downloadBoard(D.standings, D); };
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

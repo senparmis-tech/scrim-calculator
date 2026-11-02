@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0d0620">
+<title>Admin login</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="card center">
+  <h2>Admin login</h2>
+  <form method="post">
+    <p><input type="password" name="password" placeholder="Password" autofocus></p>
+    {% if error %}<p class="err">{{ error }}</p>{% endif %}
+    <p><button type="submit">Login</button> <a href="/">Back</a></p>
+  </form>
+</div>
+</body>
+</html>
