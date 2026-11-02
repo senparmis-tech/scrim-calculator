@@ -35,6 +35,7 @@ def default_state():
         "placement_points": [15, 12, 10, 8, 6, 4, 2],
         "teams": [{"name": "", "aliases": [], "players": [""] * 4} for _ in range(25)],
         "results": [[blank_result() for _ in range(25)] for _ in range(4)],
+        "locked": [False] * 4,
     }
 
 
@@ -102,6 +103,9 @@ def sanitize(raw):
             })
         results.append(row)
     s["results"] = results
+
+    raw_locked = raw.get("locked") if isinstance(raw.get("locked"), list) else []
+    s["locked"] = [bool(raw_locked[g]) if g < len(raw_locked) else False for g in range(s["games"])]
     return s
 
 
@@ -335,6 +339,11 @@ def admin_state():
 @admin_required
 def admin_save():
     s = sanitize(request.get_json(silent=True))
+    old = load_state()
+    for g in range(min(s["games"], old["games"])):
+        if old["locked"][g] and s["locked"][g]:
+            s["results"][g] = old["results"][g]
+    s = sanitize(s)
     save_state(s)
     return jsonify({"state": s, "standings": compute(s)})
 
@@ -356,6 +365,7 @@ def admin_scrim_new():
     elif mode == "teams":
         s = json.loads(json.dumps(base))
         s["results"] = [[blank_result() for _ in range(s["slots"])] for _ in range(s["games"])]
+        s["locked"] = [False] * s["games"]
     else:
         s = default_state()
         for k in ("games", "slots", "kill_points", "placement_points"):

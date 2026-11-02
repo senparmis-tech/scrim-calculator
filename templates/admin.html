@@ -17,6 +17,23 @@
 .slotcard .pr input[type=number]{width:56px}
 .slotcard .ft{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:13px}
 .slotcard .ft input{width:64px}
+.lockbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0;padding:8px 12px;border:1px solid #3b2270;border-radius:8px;background:#120a2a}
+.lockbar.on{border-color:#d9b8ff;background:#2a1456}
+.pcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:10px}
+.pcard{border:1px solid #6a46b0;border-radius:10px;padding:8px;background:#1a0d3a}
+.pcard.top{border-color:#b980ff}
+.pcard.empty{border-style:dashed;border-color:#444}
+.pcard .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #3b2270;padding-bottom:5px;margin-bottom:6px}
+.pcard .main{display:flex;gap:6px}
+.pcard .main label{flex:1;display:flex;flex-direction:column;font-size:12px;gap:2px}
+.pcard .main input{width:100%;min-width:0}
+.pcard .who{min-height:20px;margin:5px 0 2px;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pcard details{font-size:12px;opacity:.9}
+.pcard summary{cursor:pointer;margin:2px 0}
+.pcard .pr{display:flex;gap:6px;margin:4px 0}
+.pcard .pr input[type=text]{flex:1;min-width:0}
+.pcard .pr input[type=number]{width:60px}
+@media (max-width:700px){.pcards{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -83,6 +100,7 @@
   <div class="card">
     <h2>Game results</h2>
     <div class="tabs" id="tabs"></div>
+    <div class="lockbar" id="lockBar"></div>
     <div class="row" id="quick">
       <b>Quick add:</b>
       <input type="number" id="qSlot" enterkeyhint="next" min="1" placeholder="Slot">
@@ -117,10 +135,13 @@
       </table></div>
       <div class="row"><button id="applyScan">Apply to this game</button><button class="sec" id="cancelScan">Cancel</button></div>
     </div>
-    <div class="row"><button class="sec" id="toggleManual">Manual entry by slot</button></div>
-    <div id="manualPanel" style="display:none">
-      <p class="muted">Pick the game tab above. Enter the rank and each player's kills; the team's kills are added up for you. Player names are saved per team.</p>
-      <div class="slots" id="slotCards"></div>
+    <div class="row"><button class="sec" id="toggleManual">Manual entry by placement</button></div>
+    <div id="manualPanel">
+      <p class="muted">Go down the placements from the top. Type the <b>slot number</b> of the team that finished there, then its kills (Enter jumps to the next box). Open "Player kills" on a card if you want to enter kills per player.</p>
+      <div class="row"><label class="muted">Show top <input type="number" id="topN" min="1" max="50" value="25" style="width:70px"></label><span class="muted" id="missing"></span></div>
+      <div class="pcards" id="slotCards"></div>
+      <p class="muted" style="margin-bottom:4px">No show in this game:</p>
+      <div class="grid" id="nsList"></div>
     </div>
     <div class="scroll" id="gameTable"></div>
   </div>
@@ -209,7 +230,7 @@ function flushSave() {
 function openScrim(d) {
   S = d.state;
   ST = d.standings;
-  cur = 0;
+  cur = firstOpen();
   scrimCur = d.id;
   $("scanPanel").style.display = "none";
   $("scanMsg").textContent = "";
@@ -266,6 +287,7 @@ function load() {
   api("/api/admin/state").then(function (r) { return r.json(); }).then(function (d) {
     S = d.state;
     ST = d.standings;
+    cur = firstOpen();
     renderAll();
     loadScrims();
   });
@@ -280,6 +302,7 @@ function renderAll() {
   $("pp").value = S.placement_points.join(", ");
   renderTeams();
   renderTabs();
+  renderLockBar();
   renderGame();
   renderSlotCards();
   renderStandings();
@@ -294,24 +317,121 @@ function fixShape() {
   });
 }
 
+var topN = 25;
+function lockedNow() { return !!(S.locked && S.locked[cur]); }
+function guardLocked() {
+  if (!lockedNow()) return false;
+  setStatus("Game " + (cur + 1) + " is locked. Unlock it to change it.");
+  return true;
+}
+function firstOpen() {
+  for (var g = 0; g < S.games; g++) if (!(S.locked && S.locked[g])) return g;
+  return S.games - 1;
+}
+function blankRes() { return { rank: null, kills: null, noshow: false, pk: [null, null, null, null] }; }
+
+function teamAtRank(p) {
+  var res = S.results[cur];
+  for (var i = 0; i < res.length; i++) {
+    if (S.teams[i] && S.teams[i].name.trim() && !res[i].noshow && res[i].rank === p) return i;
+  }
+  return -1;
+}
+
 function renderSlotCards() {
   if ($("manualPanel").style.display === "none") return;
   fixShape();
+  var maxR = 0;
+  S.results[cur].forEach(function (r, i) {
+    if (S.teams[i].name.trim() && !r.noshow && r.rank > maxR) maxR = r.rank;
+  });
+  var n = Math.min(50, Math.max(topN, maxR));
+  $("topN").value = n;
   var h = "";
+  for (var p = 1; p <= n; p++) {
+    var pts = S.placement_points[p - 1];
+    h += '<div class="pcard empty" data-p="' + p + '" data-t="-1"><div class="hd"><b>Top ' + p + '</b><span class="muted">' + (pts == null ? 0 : pts) + ' pts</span></div>' +
+      '<div class="main"><label>Slot<input type="number" min="1" max="' + S.slots + '" data-f="slot"></label>' +
+      '<label>Kills<input type="number" min="0" data-f="kills"></label></div>' +
+      '<div class="who"></div><details><summary tabindex="-1">Player kills</summary>';
+    for (var k = 0; k < 4; k++) {
+      h += '<div class="pr"><input type="text" data-f="pname" data-k="' + k + '" placeholder="player ' + (k + 1) + '">' +
+        '<input type="number" min="0" data-f="pk" data-k="' + k + '" placeholder="kills"></div>';
+    }
+    h += "</details></div>";
+  }
+  $("slotCards").innerHTML = h;
+  var ns = "";
   S.teams.forEach(function (t, i) {
     if (!t.name.trim()) return;
-    var r = S.results[cur][i];
-    var dis = r.noshow ? "disabled" : "";
-    h += '<div class="slotcard' + (r.noshow ? " ns" : "") + '" data-i="' + i + '"><div class="hd"><span>Slot ' + (i + 1) + " · " + esc(t.name) + "</span>" +
-      '<label><input type="checkbox" data-f="noshow" ' + (r.noshow ? "checked" : "") + "> No show</label></div>";
-    for (var p = 0; p < 4; p++) {
-      h += '<div class="pr"><input type="text" data-f="pname" data-p="' + p + '" placeholder="player ' + (p + 1) + '" value="' + esc(t.players[p] || "") + '">' +
-        '<input type="number" min="0" data-f="pk" data-p="' + p + '" placeholder="kills" value="' + (r.pk[p] == null ? "" : r.pk[p]) + '" ' + dis + "></div>";
-    }
-    h += '<div class="ft"><span>Rank <input type="number" min="1" data-f="rank" value="' + (r.rank == null ? "" : r.rank) + '" ' + dis + '></span>' +
-      '<span>Kills: <b class="tk">' + (r.kills == null ? 0 : r.kills) + "</b></span></div></div>";
+    ns += '<label><input type="checkbox" data-i="' + i + '"> <span>' + (i + 1) + "</span> " + esc(t.name) + "</label>";
   });
-  $("slotCards").innerHTML = h || '<p class="muted">Type team names above first</p>';
+  $("nsList").innerHTML = ns || '<span class="muted">Type team names above first</span>';
+  refreshCards();
+}
+
+function fillCard(card) {
+  var p = Number(card.getAttribute("data-p")), i = teamAtRank(p), L = lockedNow();
+  var r = i >= 0 ? S.results[cur][i] : null, act = document.activeElement;
+  var slotIn = card.querySelector('[data-f="slot"]'), killsIn = card.querySelector('[data-f="kills"]');
+  if (act !== slotIn) slotIn.value = i >= 0 ? i + 1 : "";
+  if (i >= 0) { if (act !== killsIn) killsIn.value = r.kills == null ? "" : r.kills; }
+  else if (card.getAttribute("data-t") !== "-1" && act !== killsIn) killsIn.value = "";
+  card.setAttribute("data-t", i);
+  slotIn.disabled = L;
+  killsIn.disabled = L;
+  card.querySelector(".who").textContent = i >= 0 ? S.teams[i].name : "";
+  card.className = "pcard" + (i >= 0 ? "" : " empty") + (p <= 3 ? " top" : "");
+  for (var k = 0; k < 4; k++) {
+    var nIn = card.querySelector('[data-f="pname"][data-k="' + k + '"]'), kIn = card.querySelector('[data-f="pk"][data-k="' + k + '"]');
+    if (act !== nIn) nIn.value = i >= 0 ? (S.teams[i].players[k] || "") : "";
+    if (act !== kIn) kIn.value = i >= 0 && r.pk[k] != null ? r.pk[k] : "";
+    nIn.disabled = L || i < 0;
+    kIn.disabled = L || i < 0;
+  }
+}
+
+function refreshCards() {
+  if ($("manualPanel").style.display === "none") return;
+  var L = lockedNow();
+  document.querySelectorAll("#slotCards .pcard").forEach(fillCard);
+  document.querySelectorAll("#nsList input").forEach(function (cb) {
+    cb.checked = !!S.results[cur][Number(cb.getAttribute("data-i"))].noshow;
+    cb.disabled = L;
+  });
+  var miss = [], cnt = {}, named = 0;
+  S.results[cur].forEach(function (r, i) {
+    if (!S.teams[i].name.trim()) return;
+    named++;
+    if (r.noshow) return;
+    if (!r.rank) miss.push(i + 1);
+    else (cnt[r.rank] = cnt[r.rank] || []).push(i + 1);
+  });
+  var dup = Object.keys(cnt).filter(function (k) { return cnt[k].length > 1; })
+    .map(function (k) { return "Top " + k + " (slots " + cnt[k].join(" & ") + ")"; });
+  $("missing").textContent = !named ? "Type team names above first" :
+    (miss.length ? "Not placed yet: slot " + miss.join(", ") : "✓ Every team is placed") +
+    (dup.length ? "   ⚠ Same placement twice: " + dup.join(", ") : "");
+}
+
+function renderLockBar() {
+  var L = lockedNow(), g = cur + 1, last = cur === S.games - 1, h;
+  if (L) h = '<span>🔒 <b>Game ' + g + '</b> is locked. Its results cannot be changed.</span><button class="sec" id="lockBtn">Unlock Game ' + g + "</button>";
+  else h = '<span><b>Game ' + g + "</b> is open.</span><button id=\"lockBtn\">🔒 Lock Game " + g + (last ? "" : " and go to Game " + (g + 1)) + "</button>";
+  $("lockBar").className = "lockbar" + (L ? " on" : "");
+  $("lockBar").innerHTML = h;
+}
+
+function applyLock() {
+  var L = lockedNow();
+  $("quick").querySelectorAll("input,button").forEach(function (el) { el.disabled = L; });
+  ["scanFiles", "clearGame", "applyScan"].forEach(function (id) { $(id).disabled = L; });
+  if (L) {
+    $("gameTable").querySelectorAll("input").forEach(function (el) { el.disabled = true; });
+    $("qMsg").textContent = "Game " + (cur + 1) + " is locked";
+  } else if ($("qMsg").textContent.indexOf("is locked") !== -1) {
+    $("qMsg").textContent = "Slot, placement, kills, then Enter";
+  }
 }
 
 function renderTeams() {
@@ -324,7 +444,7 @@ function renderTeams() {
 
 function renderTabs() {
   var h = "";
-  for (var g = 0; g < S.games; g++) h += '<button data-g="' + g + '" class="' + (g === cur ? "on" : "") + '">Game ' + (g + 1) + "</button>";
+  for (var g = 0; g < S.games; g++) h += '<button data-g="' + g + '" class="' + (g === cur ? "on" : "") + '">Game ' + (g + 1) + (S.locked && S.locked[g] ? " 🔒" : "") + "</button>";
   $("tabs").innerHTML = h;
 }
 
@@ -345,6 +465,7 @@ function renderGame() {
   if (!any) h += '<tr><td colspan="6">Type team names above first</td></tr>';
   $("gameTable").innerHTML = h + "</table>";
   updatePoints();
+  applyLock();
 }
 
 function updatePoints() {
@@ -416,6 +537,7 @@ $("tabs").addEventListener("click", function (e) {
   if (g === null) return;
   cur = Number(g);
   renderTabs();
+  renderLockBar();
   renderGame();
   renderSlotCards();
   $("scanPanel").style.display = "none";
@@ -423,22 +545,26 @@ $("tabs").addEventListener("click", function (e) {
 
 $("gameTable").addEventListener("input", function (e) {
   var i = e.target.getAttribute("data-i"), f = e.target.getAttribute("data-f");
-  if (i === null || f === "noshow") return;
+  if (i === null || f === "noshow" || guardLocked()) return;
   S.results[cur][i][f] = toInt(e.target.value);
   if (f === "kills" && S.results[cur][i].pk) S.results[cur][i].pk = [null, null, null, null];
+  refreshCards();
   scheduleSave(false);
 });
 $("gameTable").addEventListener("change", function (e) {
   var i = e.target.getAttribute("data-i"), f = e.target.getAttribute("data-f");
   if (i !== null && f === "noshow") {
+    if (guardLocked()) return;
     S.results[cur][i].noshow = e.target.checked;
     renderGame();
+    refreshCards();
     scheduleSave(false);
   }
 });
 
 /* ---------- quick add: slot + placement + kills ---------- */
 function quickAdd() {
+  if (guardLocked()) return;
   var slot = toInt($("qSlot").value), rank = toInt($("qRank").value), kills = toInt($("qKills").value);
   var msg = $("qMsg");
   if (!slot || slot < 1 || slot > S.slots) { msg.textContent = "Slot must be a number from 1 to " + S.slots; $("qSlot").focus(); return; }
@@ -486,38 +612,125 @@ $("toggleManual").onclick = function () {
   p.style.display = p.style.display === "none" ? "block" : "none";
   renderSlotCards();
 };
+$("topN").onchange = function (e) {
+  topN = Math.min(50, Math.max(1, toInt(e.target.value) || 25));
+  renderSlotCards();
+};
 
-$("slotCards").addEventListener("input", function (e) {
-  var card = e.target.closest(".slotcard");
-  if (!card) return;
-  var i = Number(card.getAttribute("data-i")), f = e.target.getAttribute("data-f"), p = Number(e.target.getAttribute("data-p"));
+function clearResult(i) {
   var r = S.results[cur][i];
-  if (f === "pname") S.teams[i].players[p] = e.target.value;
-  else if (f === "rank") r.rank = toInt(e.target.value);
-  else if (f === "pk") {
-    r.pk[p] = toInt(e.target.value);
+  r.rank = null;
+  r.kills = null;
+  r.pk = [null, null, null, null];
+}
+
+// choosing / changing the slot of a placement card
+$("slotCards").addEventListener("change", function (e) {
+  var card = e.target.closest(".pcard");
+  if (!card || e.target.getAttribute("data-f") !== "slot" || guardLocked()) return;
+  var p = Number(card.getAttribute("data-p")), old = teamAtRank(p), v = toInt(e.target.value), moved = "";
+  var kIn = card.querySelector('[data-f="kills"]').value;
+  fixShape();
+  if (v === null || v < 1) {
+    if (old >= 0) clearResult(old);
+  } else {
+    if (v > S.slots || !S.teams[v - 1].name.trim()) {
+      $("missing").textContent = "Slot " + v + (v > S.slots ? " does not exist" : " has no team name yet");
+      e.target.value = old >= 0 ? old + 1 : "";
+      return;
+    }
+    if (old === v - 1) return;
+    var r = S.results[cur][v - 1], from = r.noshow ? 0 : r.rank;
+    if (old >= 0) clearResult(old);
+    r.noshow = false;
+    r.rank = p;
+    if (kIn !== "") { r.kills = Math.max(0, toInt(kIn) || 0); r.pk = [null, null, null, null]; }
+    if (from && from !== p) moved = "   (Slot " + v + " moved here from Top " + from + ")";
+  }
+  renderGame();
+  refreshCards();
+  $("missing").textContent += moved;
+  scheduleSave(false);
+});
+
+// kills, player names, player kills
+$("slotCards").addEventListener("input", function (e) {
+  var card = e.target.closest(".pcard");
+  if (!card || lockedNow()) return;
+  var p = Number(card.getAttribute("data-p")), i = teamAtRank(p);
+  if (i < 0) return; // kills typed before a slot is chosen are applied when the slot is chosen
+  var f = e.target.getAttribute("data-f"), k = Number(e.target.getAttribute("data-k")), r = S.results[cur][i];
+  fixShape();
+  if (f === "kills") {
+    r.kills = toInt(e.target.value);
+    r.pk = [null, null, null, null];
+    fillCard(card);
+  } else if (f === "pname") {
+    S.teams[i].players[k] = e.target.value;
+  } else if (f === "pk") {
+    r.pk[k] = toInt(e.target.value);
     r.kills = r.pk.reduce(function (a, b) { return a + (b || 0); }, 0);
-    card.querySelector(".tk").textContent = r.kills;
+    fillCard(card);
   } else return;
   scheduleSave(false);
 });
 
-$("slotCards").addEventListener("change", function (e) {
-  if (e.target.getAttribute("data-f") !== "noshow") return;
-  var i = Number(e.target.closest(".slotcard").getAttribute("data-i"));
-  S.results[cur][i].noshow = e.target.checked;
-  renderSlotCards();
+// Enter: slot -> kills -> next card's slot
+$("slotCards").addEventListener("keydown", function (e) {
+  if (e.key !== "Enter") return;
+  var f = e.target.getAttribute("data-f"), card = e.target.closest(".pcard");
+  if (!card || (f !== "slot" && f !== "kills")) return;
+  e.preventDefault();
+  var next = f === "slot" ? card.querySelector('[data-f="kills"]')
+    : (card.nextElementSibling ? card.nextElementSibling.querySelector('[data-f="slot"]') : null);
+  if (next) { next.focus(); if (next.select) next.select(); }
+});
+
+$("nsList").addEventListener("change", function (e) {
+  var i = toInt(e.target.getAttribute("data-i"));
+  if (i === null || guardLocked()) return;
+  var r = S.results[cur][i];
+  r.noshow = e.target.checked;
+  if (r.noshow) clearResult(i);
   renderGame();
+  refreshCards();
   scheduleSave(false);
 });
 
 $("clearGame").onclick = function () {
+  if (guardLocked()) return;
   if (!confirm("Clear all results of Game " + (cur + 1) + "?")) return;
-  S.results[cur] = S.results[cur].map(function () { return { rank: null, kills: null, noshow: false, pk: [null, null, null, null] }; });
+  S.results[cur] = S.results[cur].map(blankRes);
   renderGame();
   renderSlotCards();
   scheduleSave(false);
 };
+
+/* ---------- lock / unlock the open game ---------- */
+$("lockBar").addEventListener("click", function (e) {
+  if (e.target.id !== "lockBtn") return;
+  if (!S.locked) S.locked = [];
+  while (S.locked.length < S.games) S.locked.push(false);
+  var g = cur;
+  if (S.locked[g]) {
+    if (!confirm("Unlock Game " + (g + 1) + " so it can be edited again?")) return;
+    S.locked[g] = false;
+  } else {
+    var miss = 0;
+    S.results[g].forEach(function (r, i) { if (S.teams[i].name.trim() && !r.noshow && !r.rank) miss++; });
+    if (miss && !confirm(miss + " team" + (miss === 1 ? " has" : "s have") + " no placement in Game " + (g + 1) + " yet. Lock it anyway?")) return;
+    S.locked[g] = true;
+    if (g < S.games - 1) cur = g + 1;
+  }
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  save(false);
+  $("scanPanel").style.display = "none";
+  renderTabs();
+  renderLockBar();
+  renderGame();
+  renderSlotCards();
+});
 
 /* ---------- AI scan ---------- */
 function resizeImage(file) {
@@ -600,6 +813,7 @@ $("scanFiles").onchange = function (e) {
   var files = Array.prototype.slice.call(e.target.files);
   var input = e.target;
   if (!files.length) return;
+  if (guardLocked()) { input.value = ""; return; }
   if (scanAbort) { alert("A scan is already running. Press Stop first."); input.value = ""; return; }
   if (!S.teams.some(function (t) { return t.name.trim(); })) {
     alert("Type the team names first so the scan can match them.");
@@ -672,6 +886,7 @@ function showScan() {
 $("cancelScan").onclick = function () { $("scanPanel").style.display = "none"; };
 
 $("applyScan").onclick = function () {
+  if (guardLocked()) return;
   var trs = document.querySelectorAll("#scanBody tr");
   var used = {};
   for (var k = 0; k < trs.length; k++) {
@@ -704,7 +919,7 @@ $("applyScan").onclick = function () {
 /* ---------- other buttons ---------- */
 $("dl").onclick = function () { downloadBoard(ST, S); };
 $("reset").onclick = function () {
-  if (!confirm("Delete ALL results of ALL games? Team names stay.")) return;
+  if (!confirm("Delete ALL results of ALL games, including locked ones? Team names stay.")) return;
   api("/api/admin/reset", { method: "POST" }).then(function (r) { return r.json(); }).then(function (d) {
     S = d.state;
     ST = d.standings;
