@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0d0620"><title>Scrim Analytics</title><link rel="stylesheet" href="/static/style.css">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js");
+  }
+</script>
+</head>
+<body><div class="wrap">
+  <div class="top"><div><h1>Scrim Analytics</h1><p class="muted" id="analyticsSubtitle">Team and player performance</p></div><div class="row"><select id="analyticsScrim"></select><a href="/">Leaderboard</a><a href="/history">History</a></div></div>
+  <div class="card"><h2>Team performance</h2><div class="scroll" id="teamStats">Loading…</div></div>
+  <div class="card"><div class="top"><h2>Player MVP leaderboard</h2><a id="playerCsv" href="#">Download player CSV</a></div><p class="muted" id="playerNote"></p><div class="scroll" id="playerStats">Loading…</div></div>
+</div>
+<script src="/static/board.js"></script><script>
+var currentId = new URLSearchParams(location.search).get("s") || "";
+function escA(v){return esc(v == null ? "" : v);}
+function loadAnalytics(){fetch("/api/scrims").then(r=>r.json()).then(list=>{var sel=document.getElementById("analyticsScrim");sel.innerHTML=list.scrims.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.title)+(x.date?' — '+esc(x.date):'')+'</option>').join("");if(!list.scrims.length)return; if(!currentId)currentId=list.current; if(!list.scrims.some(x=>x.id===currentId))currentId=list.current;sel.value=currentId;return fetch("/api/analytics?s="+encodeURIComponent(currentId));}).then(r=>r&&r.json()).then(d=>{if(!d)return;var a=d.analytics;document.getElementById("playerCsv").href="/api/export/"+encodeURIComponent(currentId)+"-players.csv";document.getElementById("analyticsSubtitle").textContent="Performance for the selected scrim";document.getElementById("teamStats").innerHTML=a.teams.length?'<table><tr><th>Rank</th><th class="l">Team</th><th>Points</th><th>Kills</th><th>Wins</th><th>Top 3</th><th>Avg. placement</th><th>Games</th></tr>'+a.teams.map((t,i)=>'<tr><td>'+(i+1)+'</td><td class="l">'+esc(t.name)+'</td><td>'+t.total+'</td><td>'+t.kills+'</td><td>'+t.wins+'</td><td>'+t.top3+'</td><td>'+(t.average_placement==null?'—':t.average_placement)+'</td><td>'+t.games_played+'</td></tr>').join('')+'</table>':'No team results yet';document.getElementById("playerNote").textContent=a.player_kills_note;document.getElementById("playerStats").innerHTML=a.players.length?'<table><tr><th>MVP</th><th class="l">Player</th><th class="l">Team</th><th>Total kills</th><th>Best game</th><th>Avg. kills</th><th>Games recorded</th></tr>'+a.players.map((p,i)=>'<tr><td>'+(i+1)+'</td><td class="l">'+esc(p.name)+'</td><td class="l">'+esc(p.team)+'</td><td>'+p.kills+'</td><td>'+p.best_game+'</td><td>'+p.average_kills+'</td><td>'+p.games_played+'</td></tr>').join('')+'</table>':'No individual player kills entered yet. Enter player kills in Admin → Manual entry → Player kills.';}).catch(e=>{document.getElementById("teamStats").textContent="Could not load analytics.";});}
+document.getElementById("analyticsScrim").onchange=function(e){currentId=e.target.value;history.replaceState(null,"",currentId?"?s="+encodeURIComponent(currentId):location.pathname);loadAnalytics();};loadAnalytics();
+</script></body></html>

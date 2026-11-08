@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0d0620"><title>Scrim Schedule</title><link rel="stylesheet" href="/static/style.css">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js");
+  }
+</script>
+</head>
+<body><div class="wrap"><div class="top"><div><h1>Scrim Schedule</h1><p class="muted">Upcoming events and team registration.</p></div><div class="row"><a href="/">Leaderboard</a><a href="/history">History</a><a href="/analytics">Analytics</a></div></div><div id="scheduleCards">Loading…</div></div>
+<script>
+function escS(v){return String(v||"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function loadSchedule(){fetch('/api/schedules').then(r=>r.json()).then(d=>{var cards=d.schedules.filter(x=>x.schedule&&Object.keys(x.schedule).length);document.getElementById('scheduleCards').innerHTML=cards.length?cards.map(x=>{var m=x.schedule;var count=m.registrations_count||0;return '<div class="card"><div class="top"><h2>'+escS(m.title||x.title)+'</h2><span class="badge">'+escS(m.status||'upcoming')+'</span></div><p class="muted">'+escS(m.start_at||x.date||'Date to be announced')+' · '+count+'/'+(m.max_teams||25)+' teams</p><p>'+escS(m.notes||'')+'</p>'+(m.registration_open && m.status !== 'completed' && m.status !== 'cancelled' && count < (m.max_teams||25)?'<form class="registerForm" data-id="'+escS(x.id)+'"><div class="settings"><label>Team name<input name="team" maxlength="40" required></label><label>Captain name<input name="captain" maxlength="40" required></label><label>Contact (optional)<input name="contact" maxlength="80"></label></div><button type="submit">Register team</button><span class="muted formMsg"></span></form>':(m.registration_open?'<p class="muted">Registration is full.</p>':'<p class="muted">Registration is currently closed.</p>'))+'</div>';}).join(''):'<div class="card">No scheduled events have been published yet.</div>';}).catch(()=>document.getElementById('scheduleCards').textContent='Could not load schedules.');}
+document.getElementById('scheduleCards').addEventListener('submit',function(e){if(!e.target.matches('.registerForm'))return;e.preventDefault();var form=e.target;var data=Object.fromEntries(new FormData(form).entries());fetch('/api/scrims/'+encodeURIComponent(form.getAttribute('data-id'))+'/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json().then(d=>({ok:r.ok,data:d}))).then(x=>{form.querySelector('.formMsg').textContent=x.ok?'Registration received!':x.data.error; if(x.ok)form.reset();}).catch(()=>form.querySelector('.formMsg').textContent='Could not submit registration.');});loadSchedule();
+</script></body></html>

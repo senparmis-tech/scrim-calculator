@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0d0620"><title>Scrim Archive</title><link rel="stylesheet" href="/static/style.css">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js");
+  }
+</script>
+</head>
+<body><div class="wrap"><div class="top"><div><h1>Scrim Archive</h1><p class="muted">Browse previous and current scrim results.</p></div><div class="row"><a href="/">Leaderboard</a><a href="/analytics">Analytics</a><a href="/schedule">Schedule</a></div></div>
+<div class="card"><label>Search scrims<input id="historySearch" type="search" placeholder="Search title or date"></label><div class="scroll" id="historyList">Loading…</div></div></div>
+<script>
+var historyScrims=[];function escH(v){return String(v||"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function renderHistory(){var q=document.getElementById("historySearch").value.toLowerCase();var rows=historyScrims.filter(x=>(x.title+" "+x.date).toLowerCase().includes(q));document.getElementById("historyList").innerHTML=rows.length?'<table><tr><th class="l">Scrim</th><th>Date</th><th>Teams</th><th>Games</th><th></th></tr>'+rows.map(x=>'<tr><td class="l">'+escH(x.title||"Untitled")+(x.archived?' <span class=\"badge\">ARCHIVED</span>':'')+'</td><td>'+escH(x.date||"—")+'</td><td>'+x.teams+'</td><td>'+x.games+'</td><td><a href="/?s='+encodeURIComponent(x.id)+'">View results</a> · <a href="/api/export/'+encodeURIComponent(x.id)+'.csv">CSV</a></td></tr>').join('')+'</table>':'No matching scrims.';}
+fetch('/api/scrims').then(r=>r.json()).then(d=>{historyScrims=d.scrims;renderHistory();}).catch(()=>document.getElementById('historyList').textContent='Could not load scrim history.');document.getElementById('historySearch').oninput=renderHistory;
+</script></body></html>

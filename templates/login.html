@@ -6,12 +6,21 @@
 <meta name="theme-color" content="#0d0620">
 <title>Admin login</title>
 <link rel="stylesheet" href="/static/style.css">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js");
+  }
+</script>
 </head>
 <body>
 <div class="card center">
   <h2>Admin login</h2>
   <form method="post">
-    <p><input type="password" name="password" placeholder="Password" autofocus></p>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p><input type="text" name="username" placeholder="Username" value="admin" autocomplete="username" required></p>
+    <p><input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required></p>
     {% if error %}<p class="err">{{ error }}</p>{% endif %}
     <p><button type="submit">Login</button> <a href="/">Back</a></p>
   </form>
