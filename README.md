@@ -92,4 +92,4 @@ For each game, a team's points are `placement points + (kills x points per kill)
 
 ## About
 
-Built by [YOUR NAME](https://github.com/YOUR-USERNAME) as a hands-on project to practise Flask, a small JSON-backed API, canvas drawing and mobile-first layout.
+Built by https://github.com/senparmis-tech as a hands-on project to practise Flask, a small JSON-backed API, canvas drawing and mobile-first layout.
