@@ -19,6 +19,7 @@ def test_environment(tmp_path, monkeypatch):
     audit_file = str(tmp_path / "activity.json")
     schedule_file = str(tmp_path / "schedules.json")
     users_file = str(tmp_path / "admin_users.json")
+    team_logos_file = str(tmp_path / "team_logos.json")
 
     # Patch module-level paths in app
     monkeypatch.setattr("app.SCRIM_DIR", str(scrims_dir))
@@ -29,6 +30,7 @@ def test_environment(tmp_path, monkeypatch):
     monkeypatch.setattr("app.AUDIT_FILE", audit_file)
     monkeypatch.setattr("app.SCHEDULE_FILE", schedule_file)
     monkeypatch.setattr("app.USERS_FILE", users_file)
+    monkeypatch.setattr("app.TEAM_LOGOS_FILE", team_logos_file)
 
     # Reset in-memory rate limiting dictionaries
     import app as app_module

@@ -413,6 +413,7 @@ function save(structural) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(S)
   }).then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || "Save failed"); return d; }); }).then(function (d) {
+    if (d.team_logos) TEAM_LOGOS = d.team_logos;
     ST = d.standings;
     if (structural) {
       S = d.state;
@@ -432,7 +433,9 @@ function save(structural) {
 }
 
 /* ---------- saved scrims ---------- */
-var scrimList = [], scrimCur = "";
+var scrimList = [], scrimCur = "", TEAM_LOGOS = {};
+function teamLogoKey(name) { return String(name || "").trim().replace(/\s+/g, " ").toLowerCase(); }
+function rememberedLogo(name) { var k = teamLogoKey(name); return (k && TEAM_LOGOS[k]) ? TEAM_LOGOS[k] : ""; }
 
 function scrimLabel(x) { return (x.title.trim() || "Untitled") + (x.date ? " — " + x.date : "") + (x.archived ? " [ARCHIVED]" : ""); }
 
@@ -460,6 +463,7 @@ function flushSave() {
 }
 
 function openScrim(d) {
+  if (d.team_logos) TEAM_LOGOS = d.team_logos;
   S = d.state;
   ST = d.standings;
   cur = firstOpen();
@@ -527,6 +531,7 @@ $("scrimArchive").onclick = function () {
 
 function load() {
   api("/api/admin/state").then(function (r) { return r.json(); }).then(function (d) {
+    if (d.team_logos) TEAM_LOGOS = d.team_logos;
     S = d.state;
     ST = d.standings;
     cur = firstOpen();
@@ -822,8 +827,27 @@ $("teams").addEventListener("input", function (e) {
   if (field === "logo") {
     var lv = e.target.value.trim();
     S.teams[i].logo = (lv.indexOf("https://") === 0 || /^\/uploads\/[0-9a-f]{24}\.(png|jpg|webp)$/.test(lv)) ? lv : "";
+    var k = teamLogoKey(S.teams[i].name);
+    if (k && S.teams[i].logo) TEAM_LOGOS[k] = S.teams[i].logo;
   } else {
     S.teams[i].name = e.target.value;
+    var rem = rememberedLogo(S.teams[i].name);
+    if (rem && !S.teams[i].logo) {
+      S.teams[i].logo = rem;
+      var row = e.target.closest ? e.target.closest(".trow") : null;
+      if (row) {
+        var lIn = row.querySelector('input[data-f="logo"]');
+        if (lIn) lIn.value = rem;
+        var box = row.querySelector(".logoBox");
+        if (box && !box.querySelector(".lthumb")) {
+          var img = document.createElement("img");
+          img.className = "lthumb";
+          img.src = rem;
+          img.alt = "";
+          box.insertBefore(img, box.firstChild);
+        }
+      }
+    }
   }
   scheduleSave(false);
 });
@@ -871,6 +895,8 @@ $("logoFile").onchange = function (e) {
       .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || "Upload failed"); return d; }); });
   }).then(function (d) {
     S.teams[slot].logo = d.url;
+    var k = teamLogoKey(S.teams[slot].name);
+    if (k) TEAM_LOGOS[k] = d.url;
     renderTeams(); scheduleSave(false); setStatus("Logo uploaded ✓");
   }).catch(function (err) { setStatus(err.message); });
 };
@@ -886,14 +912,20 @@ $("applyTeams").onclick = function () {
   if (names.length > 50) names = names.slice(0, 50);
   if (names.length > S.slots) {
     S.slots = names.length;
-    while (S.teams.length < S.slots) S.teams.push({ name: "", aliases: [], players: ["", "", "", ""] });
+    while (S.teams.length < S.slots) S.teams.push({ name: "", aliases: [], players: ["", "", "", ""], logo: "" });
     S.results.forEach(function (g) {
       while (g.length < S.slots) g.push(blankRes());
     });
   }
   names.forEach(function (n, i) {
-    if (S.teams[i].name.trim().toLowerCase() !== n.toLowerCase()) S.teams[i].aliases = [];
-    S.teams[i].name = n.slice(0, 40);
+    var cleanName = n.slice(0, 40);
+    if (S.teams[i].name.trim().toLowerCase() !== cleanName.toLowerCase()) {
+      S.teams[i].aliases = [];
+      S.teams[i].logo = rememberedLogo(cleanName);
+    } else if (!S.teams[i].logo) {
+      S.teams[i].logo = rememberedLogo(cleanName);
+    }
+    S.teams[i].name = cleanName;
   });
   $("teamsText").value = "";
   $("pasteTeamsPanel").style.display = "none";

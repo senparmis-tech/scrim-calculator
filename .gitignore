@@ -1,9 +1,10 @@
 # secrets: never commit these
 config.py
 
-# your scrim data (results, team names)
+# your scrim data (results, team names, remembered logos)
 scrims/
 data.json
+team_logos.json
 *.tmp
 
 # Python

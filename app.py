@@ -51,6 +51,7 @@ LOGO_PATH_RE = re.compile(r"^/uploads/[0-9a-f]{24}\.(png|jpg|webp)$")
 AUDIT_FILE = os.path.join(BASE_DIR, "activity.json")
 SCHEDULE_FILE = os.path.join(BASE_DIR, "schedules.json")
 USERS_FILE = os.path.join(BASE_DIR, "admin_users.json")
+TEAM_LOGOS_FILE = os.path.join(BASE_DIR, "team_logos.json")
 LOGIN_ATTEMPTS = {}
 REGISTRATION_ATTEMPTS = {}
 LOGIN_LOCK = threading.Lock()
@@ -418,13 +419,76 @@ def valid_id(sid):
     return bool(sid) and bool(ID_RE.match(str(sid))) and os.path.exists(scrim_path(str(sid)))
 
 
+def team_logo_key(name):
+    return re.sub(r"\s+", " ", str(name or "").strip()).casefold()
+
+
+def load_team_logos():
+    logos = read_json_file(TEAM_LOGOS_FILE, None)
+    if isinstance(logos, dict):
+        return logos
+    # Initialize from existing saved scrims (oldest to newest so newest wins)
+    logos = {}
+    ids = sorted(list_ids(), key=lambda i: os.path.getmtime(scrim_path(i)))
+    for sid in ids:
+        try:
+            with open(scrim_path(sid), "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            for t in raw.get("teams") or []:
+                if isinstance(t, dict):
+                    k = team_logo_key(t.get("name"))
+                    lg = str(t.get("logo") or "").strip()
+                    if k and lg and (lg.startswith("https://") or LOGO_PATH_RE.match(lg)):
+                        logos[k] = lg
+        except (ValueError, OSError):
+            pass
+    if logos:
+        write_json_file(TEAM_LOGOS_FILE, logos)
+    return logos
+
+
+def remember_team_logos(state):
+    if not isinstance(state, dict):
+        return
+    logos = load_team_logos()
+    changed = False
+    for t in state.get("teams") or []:
+        if not isinstance(t, dict):
+            continue
+        k = team_logo_key(t.get("name"))
+        lg = str(t.get("logo") or "").strip()
+        if k and lg and (lg.startswith("https://") or LOGO_PATH_RE.match(lg)):
+            if logos.get(k) != lg:
+                logos[k] = lg
+                changed = True
+    if changed:
+        write_json_file(TEAM_LOGOS_FILE, logos)
+
+
+def apply_saved_team_logos(state):
+    if not isinstance(state, dict):
+        return state
+    logos = load_team_logos()
+    if not logos:
+        return state
+    for t in state.get("teams") or []:
+        if not isinstance(t, dict):
+            continue
+        if not str(t.get("logo") or "").strip():
+            k = team_logo_key(t.get("name"))
+            if k and k in logos:
+                t["logo"] = logos[k]
+    return state
+
+
 def load_state(sid=None):
     ensure_store()
     sid = sid if valid_id(sid) else current_id()
     with LOCK:
         try:
             with open(scrim_path(sid), "r", encoding="utf-8") as f:
-                return sanitize(json.load(f))
+                st = sanitize(json.load(f))
+            return apply_saved_team_logos(st)
         except (ValueError, OSError):
             return default_state()
 
@@ -434,6 +498,8 @@ def save_state(state, sid=None, snap_gap=30):
     # a brand-new scrim has no file yet, so only the id's shape is checked here
     sid = sid if sid and ID_RE.match(str(sid)) else current_id()
     with LOCK:
+        remember_team_logos(state)
+        apply_saved_team_logos(state)
         path = scrim_path(sid)
         if os.path.exists(path):
             try:
@@ -803,7 +869,7 @@ def download_backup():
                 if name.endswith(".json") or name == "current.txt":
                     path = os.path.join(folder, name)
                     archive.write(path, os.path.relpath(path, BASE_DIR))
-        for path in (SCHEDULE_FILE, AUDIT_FILE, USERS_FILE):
+        for path in (SCHEDULE_FILE, AUDIT_FILE, USERS_FILE, TEAM_LOGOS_FILE):
             if os.path.exists(path):
                 archive.write(path, os.path.basename(path))
         if os.path.isdir(UPLOAD_DIR):
@@ -930,7 +996,7 @@ def delete_admin_user():
 @admin_required
 def admin_state():
     s = load_state()
-    return jsonify({"state": s, "standings": compute(s)})
+    return jsonify({"state": s, "standings": compute(s), "team_logos": load_team_logos()})
 
 
 def validate_state(raw):
@@ -980,7 +1046,7 @@ def admin_save():
             s["results"][g] = old["results"][g]
     s = sanitize(s)
     save_state(s)
-    return jsonify({"state": s, "standings": compute(s)})
+    return jsonify({"state": s, "standings": compute(s), "team_logos": load_team_logos()})
 
 
 @app.route("/api/admin/scrims")
@@ -1014,7 +1080,7 @@ def admin_scrim_new():
     sid = new_id()
     save_state(s, sid)
     set_current(sid)
-    return jsonify({"id": sid, "state": s, "standings": compute(s)})
+    return jsonify({"id": sid, "state": s, "standings": compute(s), "team_logos": load_team_logos()})
 
 
 @app.route("/api/admin/scrims/switch", methods=["POST"])
@@ -1026,7 +1092,7 @@ def admin_scrim_switch():
     set_current(sid)
     s = load_state(sid)
     audit("Switched scrim", s.get("title", sid))
-    return jsonify({"id": sid, "state": s, "standings": compute(s)})
+    return jsonify({"id": sid, "state": s, "standings": compute(s), "team_logos": load_team_logos()})
 
 
 @app.route("/api/admin/scrims/delete", methods=["POST"])
@@ -1046,7 +1112,7 @@ def admin_scrim_delete():
         set_current(ids[0])
     cur = current_id()
     s = load_state(cur)
-    return jsonify({"id": cur, "state": s, "standings": compute(s)})
+    return jsonify({"id": cur, "state": s, "standings": compute(s), "team_logos": load_team_logos()})
 
 
 @app.route("/api/admin/scrims/archive", methods=["POST"])

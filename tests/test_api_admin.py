@@ -142,3 +142,34 @@ def test_admin_backup_download(admin_client, sample_state):
     res = admin_client.get("/api/admin/backup")
     assert res.status_code == 200
     assert res.content_type == "application/zip"
+
+
+def test_team_logo_memory_across_new_scrims(admin_client, sample_state):
+    headers = {"X-CSRF-Token": "valid-test-csrf-token"}
+    logo_url = "/uploads/196bf5372a049024ce456ac4.png"
+
+    # 1. Save a scrim where "Alpha Squad" has a logo
+    sample_state["teams"][0]["logo"] = logo_url
+    res1 = admin_client.post("/api/admin/save", json=sample_state, headers=headers)
+    assert res1.status_code == 200
+    assert res1.get_json()["team_logos"].get("alpha squad") == logo_url
+
+    # 2. Create a brand new empty scrim
+    res_new = admin_client.post(
+        "/api/admin/scrims/new",
+        json={"title": "Next Day Scrim", "mode": "empty"},
+        headers=headers
+    )
+    assert res_new.status_code == 200
+    new_state = res_new.get_json()["state"]
+
+    # 3. Enter "Alpha Squad" in Slot 2 without specifying a logo
+    new_state["teams"][1]["name"] = "Alpha Squad"
+    new_state["teams"][1]["logo"] = ""
+    res_save2 = admin_client.post("/api/admin/save", json=new_state, headers=headers)
+    assert res_save2.status_code == 200
+    saved_state = res_save2.get_json()["state"]
+
+    # The logo is automatically populated from memory!
+    assert saved_state["teams"][1]["logo"] == logo_url
+
