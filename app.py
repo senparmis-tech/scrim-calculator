@@ -15,9 +15,21 @@ from datetime import datetime, timezone
 from functools import wraps
 
 import requests
-from flask import Flask, request, jsonify, session, redirect, url_for, render_template, send_file, send_from_directory, abort
+from flask import Flask, request, jsonify, session, redirect, url_for, render_template, send_file, send_from_directory, abort, has_request_context
 
-import config
+try:
+    import config
+except ImportError:
+    class _ConfigFallback:
+        ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "change-me")
+        SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+        AI_PROVIDER = os.environ.get("AI_PROVIDER", "gemini")
+        GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+        GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+        GEMINI_FALLBACK_MODELS = ["gemini-3.5-flash-lite"]
+        ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+        AI_MODEL = os.environ.get("AI_MODEL", "claude-sonnet-4-6")
+    config = _ConfigFallback()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "data.json")
@@ -88,7 +100,7 @@ def audit(action, details="", coalesce=False):
     """Add a row to the activity log. With coalesce=True, a repeat of the newest row
     (same user, action and details within 5 minutes) just bumps its time and count."""
     now = datetime.now(timezone.utc)
-    user = session.get("username", "system")
+    user = session.get("username", "system") if has_request_context() else "system"
     action = str(action)[:80]
     details = str(details)[:240]
     with LOCK:
